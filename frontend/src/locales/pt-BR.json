@@ -191,6 +191,8 @@
     "uncategorized": "Sem categoria",
     "selected": "selecionadas",
     "bulkCategorize": "Aplicar",
+    "bulkAddTags": "Adicionar tags",
+    "addTagsPlaceholder": "#tag…",
     "bulkSuccess": "{{count}} transações categorizadas",
     "selectCategory": "Selecionar categoria...",
     "noResults": "Nenhuma transação encontrada",

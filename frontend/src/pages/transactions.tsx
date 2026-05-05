@@ -8,6 +8,17 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuPortal,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -23,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, Check, Download, HelpCircle, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, Check, Download, HelpCircle, Info, Paperclip, TagIcon, X } from 'lucide-react'
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -123,6 +134,8 @@ export default function TransactionsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkCategory, setBulkCategory] = useState<string>('')
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
+  const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
+  const bulkTagInputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
@@ -473,6 +486,16 @@ export default function TransactionsPage() {
 
   const totalPages = data ? Math.ceil(data.total / 20) : 0
 
+  const handleFocusTagInput = () => {
+    setIsBulkBarPulsing(true)
+    setTimeout(() => {
+      bulkTagInputRef.current?.focus()
+    }, 50)
+    setTimeout(() => {
+      setIsBulkBarPulsing(false)
+    }, 800)
+  }
+
   const isTransferCategoryPromptOpen = !!pendingTransferCategoryUpdate
 
   const submitPendingTransferCategoryUpdate = (applyToTransferPair: boolean) => {
@@ -673,176 +696,230 @@ export default function TransactionsPage() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  ref={tx.id === highlightId ? highlightedRowRef : undefined}
-                  className={`hover:bg-muted border-b border-border last:border-0 ${
-                    selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                  } ${tx.is_shared ? 'cursor-default' : 'cursor-pointer'}`}
-                  onClick={() => {
-                    if (tx.is_shared) {
-                      // Owned by another user — view in the group context instead.
-                      if (tx.group_id) navigate(`/groups/${tx.group_id}`)
-                      return
-                    }
-                    setEditingTx(tx)
-                    setDialogOpen(true)
-                  }}
-                >
-                  <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
-                    {/* Bulk operations are scoped to user.id so they
-                        silently skip shared rows — hide the checkbox
-                        on those to avoid the dead-end UX. */}
-                    {!tx.is_shared && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(tx.id)}
-                        onChange={() => toggleSelect(tx.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2.5 pl-2 max-w-0">
-                    <div className="flex items-center gap-2 md:gap-3">
-                      <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
-                          {tx.group_id && (
-                            <span
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
-                              title={t('splitGroups.sharedRowTooltip')}
-                            >
-                              {tx.is_shared && tx.parent_owner_name
-                                ? t('splitGroups.sharedRowBadgeAuthor', {
-                                    author: tx.parent_owner_name,
-                                    group: groupNameById.get(tx.group_id) ?? '',
-                                  })
-                                : t('splitGroups.ownerRowBadge', {
-                                    group: groupNameById.get(tx.group_id) ?? '',
-                                  })}
-                            </span>
-                          )}
-                          {!!tx.transfer_pair_id && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                              <ArrowLeftRight className="h-3 w-3" />
-                              {t('transactions.transfer')}
-                              <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
-                            </span>
-                          )}
-                          {recurringList?.some(r => r.description === tx.description && r.type === tx.type) && (
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full">
-                              {t('transactions.recurringBadge')}
-                            </span>
-                          )}
-                          {tx.installment_number != null && tx.total_installments != null && (
-                            <span
-                              className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
-                              title={tx.installment_total_amount != null
-                                ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
-                                : undefined}
-                            >
-                              {tx.installment_number}/{tx.total_installments}
-                            </span>
-                          )}
-                          {(tx.attachment_count ?? 0) > 0 && (
-                            <Paperclip size={12} className="text-muted-foreground shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{new Date(tx.date + 'T00:00:00').toLocaleDateString(locale)}</p>
-                        {tx.notes && (
-                          <div className="mt-1 space-y-0.5">
-                            {tx.notes.replace(/#[\w\u00C0-\u017E-]+/g, '').trim() && (
-                              <p className="text-xs text-muted-foreground italic leading-snug">
-                                {tx.notes.replace(/#[\w\u00C0-\u017E-]+/g, '').trim()}
-                              </p>
-                            )}
-                            {parseHashtags(tx.notes).length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {parseHashtags(tx.notes).map((tag) => (
-                                  <span
-                                    key={tag}
-                                    className="inline-block text-[11px] font-medium bg-primary/5 text-primary border border-primary/10 px-1.5 py-0 rounded-full leading-5 cursor-pointer hover:bg-primary/10 transition-colors"
-                                    onClick={(e) => { e.stopPropagation(); addTagFilter(tag) }}
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
+                <ContextMenu key={tx.id}>
+                  <ContextMenuTrigger asChild>
+                    <TableRow
+                      ref={tx.id === highlightId ? highlightedRowRef : undefined}
+                      onContextMenu={() => {
+                        if (!selectedIds.has(tx.id)) {
+                          setSelectedIds(new Set([tx.id]))
+                        }
+                      }}
+                      className={`hover:bg-muted border-b border-border last:border-0 ${
+                        selectedIds.has(tx.id) ? 'bg-primary/5' : ''
+                      } ${tx.is_shared ? 'cursor-default' : 'cursor-pointer'}`}
+                      onClick={() => {
+                        if (tx.is_shared) {
+                          // Owned by another user — view in the group context instead.
+                          if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+                          return
+                        }
+                        setEditingTx(tx)
+                        setDialogOpen(true)
+                      }}
+                    >
+                      <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
+                        {/* Bulk operations are scoped to user.id so they
+                            silently skip shared rows — hide the checkbox
+                            on those to avoid the dead-end UX. */}
+                        {!tx.is_shared && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(tx.id)}
+                            onChange={() => toggleSelect(tx.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2.5 pl-2 max-w-0">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
+                              {tx.group_id && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
+                                  title={t('splitGroups.sharedRowTooltip')}
+                                >
+                                  {tx.is_shared && tx.parent_owner_name
+                                    ? t('splitGroups.sharedRowBadgeAuthor', {
+                                      author: tx.parent_owner_name,
+                                      group: groupNameById.get(tx.group_id) ?? '',
+                                    })
+                                    : t('splitGroups.ownerRowBadge', {
+                                      group: groupNameById.get(tx.group_id) ?? '',
+                                    })}
+                                </span>
+                              )}
+                              {!!tx.transfer_pair_id && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                                  <ArrowLeftRight className="h-3 w-3" />
+                                  {t('transactions.transfer')}
+                                  <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                                </span>
+                              )}
+                              {recurringList?.some(r => r.description === tx.description && r.type === tx.type) && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full">
+                                  {t('transactions.recurringBadge')}
+                                </span>
+                              )}
+                              {tx.installment_number != null && tx.total_installments != null && (
+                                <span
+                                  className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
+                                  title={tx.installment_total_amount != null
+                                    ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
+                                    : undefined}
+                                >
+                                  {tx.installment_number}/{tx.total_installments}
+                                </span>
+                              )}
+                              {(tx.attachment_count ?? 0) > 0 && (
+                                <Paperclip size={12} className="text-muted-foreground shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">{new Date(tx.date + 'T00:00:00').toLocaleDateString(locale)}</p>
+                            {tx.notes && (
+                              <div className="mt-1 space-y-0.5">
+                                {tx.notes.replace(/#[\w\u00C0-\u017E-]+/g, '').trim() && (
+                                  <p className="text-xs text-muted-foreground italic leading-snug">
+                                    {tx.notes.replace(/#[\w\u00C0-\u017E-]+/g, '').trim()}
+                                  </p>
+                                )}
+                                {parseHashtags(tx.notes).length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {parseHashtags(tx.notes).map((tag) => (
+                                      <span
+                                        key={tag}
+                                        className="inline-block text-[11px] font-medium bg-primary/5 text-primary border border-primary/10 px-1.5 py-0 rounded-full leading-5 cursor-pointer hover:bg-primary/10 transition-colors"
+                                        onClick={(e) => { e.stopPropagation(); addTagFilter(tag) }}
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell py-2.5">
+                        {tx.category ? (
+                          <span className="text-sm text-muted-foreground">{tx.category.name}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
                         )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell py-2.5">
-                    {tx.category ? (
-                      <span className="text-sm text-muted-foreground">{tx.category.name}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell py-2.5 text-sm text-muted-foreground">
-                    {getAccountName(accountsList?.find((a) => a.id === tx.account_id) ?? { name: '', display_name: null }) || (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2.5 pr-3 md:pr-5 text-right">
-                    {(() => {
-                      // For shared rows we show the viewer's share (the
-                      // portion that's actually theirs in financial
-                      // terms), with the parent's full amount on a small
-                      // secondary line for context.
-                      const displayAmount = tx.is_shared && tx.viewer_share != null
-                        ? Number(tx.viewer_share)
-                        : Number(tx.amount)
-                      return (
-                        <span
-                          className={`text-xs md:text-sm font-bold tabular-nums ${
-                            tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
-                          }`}
-                        >
-                          {mask(
-                            `${tx.type === 'credit' ? '+' : '−'}${formatCurrency(
-                              Math.abs(displayAmount),
-                              tx.currency,
-                              locale,
-                            )}`,
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell py-2.5 text-sm text-muted-foreground">
+                        {getAccountName(accountsList?.find((a) => a.id === tx.account_id) ?? { name: '', display_name: null }) || (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2.5 pr-3 md:pr-5 text-right">
+                        {(() => {
+                          // For shared rows we show the viewer's share (the
+                          // portion that's actually theirs in financial
+                          // terms), with the parent's full amount on a small
+                          // secondary line for context.
+                          const displayAmount = tx.is_shared && tx.viewer_share != null
+                            ? Number(tx.viewer_share)
+                            : Number(tx.amount)
+                          return (
+                            <span
+                              className={`text-xs md:text-sm font-bold tabular-nums ${
+                                tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+                              }`}
+                            >
+                              {mask(
+                                `${tx.type === 'credit' ? '+' : '−'}${formatCurrency(
+                                  Math.abs(displayAmount),
+                                  tx.currency,
+                                  locale,
+                                )}`,
+                              )}
+                            </span>
+                          )
+                        })()}
+                        {tx.is_shared && (
+                          <p className="text-[10px] text-muted-foreground tabular-nums">
+                            {t('splitGroups.sharedRowParent', {
+                              total: formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale),
+                            })}
+                          </p>
+                        )}
+                        {/* Owner of a split: show your-share secondary line.
+                            Skip when the owner is the sole member (share ==
+                            amount) — would just duplicate the figure. */}
+                        {!tx.is_shared && tx.viewer_share != null
+                          && Math.abs(Number(tx.viewer_share)) !== Math.abs(Number(tx.amount)) && (
+                            <p className="text-[10px] text-muted-foreground tabular-nums">
+                              {t('splitGroups.ownerRowYourShare', {
+                                share: formatCurrency(Math.abs(Number(tx.viewer_share)), tx.currency, locale),
+                              })}
+                            </p>
                           )}
-                        </span>
-                      )
-                    })()}
-                    {tx.is_shared && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums">
-                        {t('splitGroups.sharedRowParent', {
-                          total: formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale),
-                        })}
-                      </p>
-                    )}
-                    {/* Owner of a split: show your-share secondary line.
-                        Skip when the owner is the sole member (share ==
-                        amount) — would just duplicate the figure. */}
-                    {!tx.is_shared && tx.viewer_share != null
-                      && Math.abs(Number(tx.viewer_share)) !== Math.abs(Number(tx.amount)) && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums">
-                        {t('splitGroups.ownerRowYourShare', {
-                          share: formatCurrency(Math.abs(Number(tx.viewer_share)), tx.currency, locale),
-                        })}
-                      </p>
-                    )}
-                    {tx.amount_primary != null && tx.currency !== userCurrency && (
-                      <div className="flex items-center justify-end gap-1">
-                        {tx.fx_fallback && (
-                          <span title={t('transactions.fxFallbackTooltip')}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>
+                        {tx.amount_primary != null && tx.currency !== userCurrency && (
+                          <div className="flex items-center justify-end gap-1">
+                            {tx.fx_fallback && (
+                              <span title={t('transactions.fxFallbackTooltip')}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}
+                            </span>
+                          </div>
                         )}
-                        <span className="text-[10px] text-muted-foreground tabular-nums">
-                          {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}
-                        </span>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
+                      </TableCell>
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuPortal>
+                    <ContextMenuContent className="w-64">
+                      <ContextMenuItem
+                        disabled={!canOpenLinkDialog}
+                        onSelect={() => setLinkTransferDialogOpen(true)}
+                      >
+                        <ArrowLeftRight className="mr-2 h-4 w-4" />
+                        {t('transactions.linkAsTransfer')}
+                      </ContextMenuItem>
+
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <TagIcon className="mr-2 h-4 w-4" />
+                          {t('transactions.selectCategory')}
+                        </ContextMenuSubTrigger>
+                        <ContextMenuPortal>
+                          <ContextMenuSubContent className="w-48">
+                            <ContextMenuItem
+                              onSelect={() => {
+                                bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: null })
+                              }}
+                            >
+                              <span className="text-xs italic">{t('transactions.noCategory')}</span>
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            {categoriesList?.map((cat) => (
+                              <ContextMenuItem
+                                key={cat.id}
+                                onSelect={() => {
+                                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: cat.id })
+                                }}
+                              >
+                                <CategoryIcon icon={cat.icon} color={cat.color} size="sm" className="mr-2" />
+                                {cat.name}
+                              </ContextMenuItem>
+                            ))}
+                          </ContextMenuSubContent>
+                        </ContextMenuPortal>
+                      </ContextMenuSub>
+
+                      <ContextMenuItem onSelect={handleFocusTagInput}>
+                        <TagIcon className="mr-2 h-4 w-4" />
+                        {t('transactions.bulkAddTags')}
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenuPortal>
+                </ContextMenu>
               ))}
               {filteredItems.length === 0 && (
                 <TableRow>
@@ -886,7 +963,7 @@ export default function TransactionsPage() {
         className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-200 ease-out ${selectedIds.size > 0 ? 'translate-y-0' : 'translate-y-full'}`}
       >
         <div className="mx-auto max-w-5xl px-3 md:px-4 pb-4 md:pb-6">
-          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
+          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
             {/* Selection count */}
             <div className="flex items-center gap-2 pl-3 pr-4 text-sm font-medium text-foreground whitespace-nowrap">
               <span className="inline-flex items-center justify-center size-6 rounded-full bg-primary/10 text-primary text-xs font-semibold">
@@ -919,12 +996,16 @@ export default function TransactionsPage() {
             <div className="w-px bg-border/60 self-stretch" />
 
             {/* Add tags inline */}
-            <div className="flex items-center gap-1 px-1">
+            <div
+              className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
+                isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
+              }`}>
               <input
+                ref={bulkTagInputRef}
                 type="text"
                 value={bulkTagInput}
                 onChange={(e) => setBulkTagInput(e.target.value)}
-                placeholder={t('transactions.addTagsPlaceholder', '#tag…')}
+                placeholder={t('transactions.addTagsPlaceholder')}
                 className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && bulkTagInput.trim()) {
@@ -944,7 +1025,7 @@ export default function TransactionsPage() {
                   bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
                 }}
                 className="h-8 w-8 px-0 shrink-0"
-                title={t('transactions.bulkAddTags', 'Add tags')}
+                title={t('transactions.bulkAddTags')}
               >
                 <Check size={15} />
               </Button>
@@ -1065,7 +1146,7 @@ export default function TransactionsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>    
     </div>
   )
 }

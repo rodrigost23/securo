@@ -191,6 +191,8 @@
     "uncategorized": "Uncategorized",
     "selected": "selected",
     "bulkCategorize": "Apply",
+    "bulkAddTags": "Add tags",
+    "addTagsPlaceholder": "#tag…",
     "bulkSuccess": "{{count}} transactions categorized",
     "selectCategory": "Select category...",
     "noResults": "No transactions found",
