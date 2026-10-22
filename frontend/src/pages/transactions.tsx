@@ -55,6 +55,7 @@ import { calculateRangeSelection } from '@/lib/selection-utils'
 import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
+import { CategoryPicker } from '@/components/category-picker'
 import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
 import { refreshTransactionsView } from '@/lib/transactions-refresh'
@@ -231,6 +232,7 @@ export default function TransactionsPage() {
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
+  const [menuEpoch, setMenuEpoch] = useState(0)
   const bulkTagInputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
@@ -1608,12 +1610,12 @@ export default function TransactionsPage() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((tx) => (
-                <ContextMenu key={tx.id}>
-                  <ContextMenuTrigger asChild>
+                <ContextMenu key={`${tx.id}:${menuEpoch}`}>
+                  <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
                     <TableRow
                       ref={tx.id === highlightId ? highlightedRowRef : undefined}
                       onContextMenu={() => {
-                        if (!selectedIds.has(tx.id)) {
+                        if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
                           setSelectedIds(new Set([tx.id]))
                         }
                       }}
@@ -1667,33 +1669,55 @@ export default function TransactionsPage() {
                           {t('transactions.selectCategory')}
                         </ContextMenuSubTrigger>
                         <ContextMenuPortal>
-                          <ContextMenuSubContent className="w-48">
-                            <ContextMenuItem
-                              onSelect={() => {
-                                bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: null })
-                              }}
-                            >
-                              <span className="text-xs italic">{t('transactions.noCategory')}</span>
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            {categoriesList?.map((cat) => (
-                              <ContextMenuItem
-                                key={cat.id}
-                                onSelect={() => {
-                                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: cat.id })
+                          <ContextMenuSubContent className="w-64 p-0">
+                            {/* A text field inside a Radix menu would have its arrow keys
+                                and typing (typeahead) handled as menu navigation, so keep
+                                the key events inside the picker. Escape still closes the
+                                menu, as it is handled on the document. */}
+                            <div onKeyDown={(e) => e.stopPropagation()}>
+                              <CategoryPicker
+                                value={null}
+                                onChange={(categoryId) => {
+                                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: categoryId || null })
+                                  // Radix's context menu can't be closed from outside and
+                                  // picker rows are not menu items, so remount it to dismiss.
+                                  setMenuEpoch((n) => n + 1)
                                 }}
-                              >
-                                <CategoryIcon icon={cat.icon} color={cat.color} size="sm" className="mr-2" />
-                                {cat.name}
-                              </ContextMenuItem>
-                            ))}
+                                categories={categoriesList ?? []}
+                                groups={categoryGroupsList ?? []}
+                                allowNone
+                                autoFocus
+                              />
+                            </div>
                           </ContextMenuSubContent>
                         </ContextMenuPortal>
                       </ContextMenuSub>
 
+                      <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
+                        <Users className="mr-2 h-4 w-4" />
+                        {t('transactions.addToGroup')}
+                      </ContextMenuItem>
+
                       <ContextMenuItem onSelect={handleFocusTagInput}>
                         <TagIcon className="mr-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
+                      </ContextMenuItem>
+
+                      {selectedSingleTx && (
+                        <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={bulkDeleteMutation.isPending}
+                        onSelect={() => setBulkDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('common.delete')}
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenuPortal>
