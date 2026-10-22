@@ -1362,6 +1362,10 @@ export default function TransactionsPage() {
   const selectedSingleTx = canWrite && selectedIds.size === 1
     ? filteredItems.find(tx => selectedIds.has(tx.id))
     : undefined
+  // Tags present on the selection, offered by the context menu's "Remove tags".
+  const selectedTags = Array.from(new Set(
+    filteredItems.filter(tx => selectedIds.has(tx.id)).flatMap(tx => parseHashtags(tx.notes)),
+  ))
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
     ? selectedSingleTx
     : null
@@ -1609,11 +1613,11 @@ export default function TransactionsPage() {
             <TableBody>
               {filteredItems.map((tx) => (
                 <ContextMenu key={tx.id}>
-                  <ContextMenuTrigger asChild>
+                  <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
                     <TableRow
                       ref={tx.id === highlightId ? highlightedRowRef : undefined}
                       onContextMenu={() => {
-                        if (!selectedIds.has(tx.id)) {
+                        if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
                           setSelectedIds(new Set([tx.id]))
                         }
                       }}
@@ -1667,7 +1671,7 @@ export default function TransactionsPage() {
                           {t('transactions.selectCategory')}
                         </ContextMenuSubTrigger>
                         <ContextMenuPortal>
-                          <ContextMenuSubContent className="w-48">
+                          <ContextMenuSubContent className="w-48 max-h-80 overflow-y-auto">
                             <ContextMenuItem
                               onSelect={() => {
                                 bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: null })
@@ -1691,9 +1695,50 @@ export default function TransactionsPage() {
                         </ContextMenuPortal>
                       </ContextMenuSub>
 
+                      <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
+                        <Users className="mr-2 h-4 w-4" />
+                        {t('transactions.addToGroup')}
+                      </ContextMenuItem>
+
                       <ContextMenuItem onSelect={handleFocusTagInput}>
                         <TagIcon className="mr-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
+                      </ContextMenuItem>
+
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger disabled={selectedTags.length === 0}>
+                          <X className="mr-2 h-4 w-4" />
+                          {t('transactions.bulkRemoveTags')}
+                        </ContextMenuSubTrigger>
+                        <ContextMenuPortal>
+                          <ContextMenuSubContent className="w-48">
+                            {selectedTags.map((tag) => (
+                              <ContextMenuItem
+                                key={tag}
+                                onSelect={() => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: [tag] })}
+                              >
+                                {tag}
+                              </ContextMenuItem>
+                            ))}
+                          </ContextMenuSubContent>
+                        </ContextMenuPortal>
+                      </ContextMenuSub>
+
+                      {selectedSingleTx && (
+                        <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={bulkDeleteMutation.isPending}
+                        onSelect={() => setBulkDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('common.delete')}
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenuPortal>
