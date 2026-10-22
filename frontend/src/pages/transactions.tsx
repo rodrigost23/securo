@@ -1609,11 +1609,11 @@ export default function TransactionsPage() {
             <TableBody>
               {filteredItems.map((tx) => (
                 <ContextMenu key={tx.id}>
-                  <ContextMenuTrigger asChild>
+                  <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
                     <TableRow
                       ref={tx.id === highlightId ? highlightedRowRef : undefined}
                       onContextMenu={() => {
-                        if (!selectedIds.has(tx.id)) {
+                        if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
                           setSelectedIds(new Set([tx.id]))
                         }
                       }}
@@ -1667,7 +1667,7 @@ export default function TransactionsPage() {
                           {t('transactions.selectCategory')}
                         </ContextMenuSubTrigger>
                         <ContextMenuPortal>
-                          <ContextMenuSubContent className="w-48">
+                          <ContextMenuSubContent className="w-48 max-h-80 overflow-y-auto">
                             <ContextMenuItem
                               onSelect={() => {
                                 bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: null })
@@ -1691,9 +1691,31 @@ export default function TransactionsPage() {
                         </ContextMenuPortal>
                       </ContextMenuSub>
 
+                      <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
+                        <Users className="mr-2 h-4 w-4" />
+                        {t('transactions.addToGroup')}
+                      </ContextMenuItem>
+
                       <ContextMenuItem onSelect={handleFocusTagInput}>
                         <TagIcon className="mr-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
+                      </ContextMenuItem>
+
+                      {selectedSingleTx && (
+                        <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={bulkDeleteMutation.isPending}
+                        onSelect={() => setBulkDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('common.delete')}
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenuPortal>
