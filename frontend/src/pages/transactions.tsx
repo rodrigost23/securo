@@ -1617,6 +1617,7 @@ export default function TransactionsPage() {
                       onContextMenu={() => {
                         if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
                           setSelectedIds(new Set([tx.id]))
+                          setLastSelectedId(tx.id)
                         }
                       }}
                       className={`hover:bg-muted border-b border-border last:border-0 ${
