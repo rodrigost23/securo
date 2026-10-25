@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import { resolveAppVersion } from './build/version.ts'
 
 function getFrontendHost(frontendUrl?: string) {
@@ -35,7 +36,36 @@ export default defineConfig(async ({ mode }) => {
       // page instead of booting the app (issue #295).
       assetsDir: 'static',
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Minimal service worker: it exists so the app is installable and the
+      // shell opens instantly. The manifest is the hand-written one in
+      // public/, and /api is never cached or served from the shell fallback,
+      // so no financial data is stored offline.
+      VitePWA({
+        registerType: 'autoUpdate',
+        manifest: false,
+        workbox: {
+          // Precache only the shell; hashed bundles are cached on first use so
+          // installing the app doesn't download every lazy chunk and locale.
+          globPatterns: ['index.html', 'manifest.json', '*.{png,ico}'],
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api\//, /^\/i\//],
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) => url.pathname.startsWith('/static/'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'static-assets',
+                expiration: { maxEntries: 150, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              },
+            },
+          ],
+          cleanupOutdatedCaches: true,
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, './src'),
