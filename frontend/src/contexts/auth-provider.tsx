@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { isAxiosError } from 'axios'
 import { useQueryClient } from '@tanstack/react-query'
 import { auth } from '@/lib/api'
 import type { User } from '@/types'
@@ -21,8 +22,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     auth.me()
       .then((me) => { if (!cancelled) setUser(me) })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return
+        // Only a token the server rejects ends the session. No response (offline,
+        // server restarting) or a 5xx says nothing about the token, so keep it
+        // and let the requests retry once the server is back.
+        if (!isAxiosError(error) || error.response?.status !== 401) return
         localStorage.removeItem('token')
         setToken(null)
       })
