@@ -39,10 +39,11 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      // Minimal service worker: it exists so the app is installable and the
-      // shell opens instantly. The manifest is the hand-written one in
-      // public/, and /api is never cached or served from the shell fallback,
-      // so no financial data is stored offline.
+      // Service worker (Workbox generateSW). The web manifest is the
+      // hand-written public/manifest.json, so the plugin doesn't generate one.
+      // Only the app shell and hashed static assets are cached; /api is never
+      // cached nor answered with the shell fallback, so no financial data is
+      // stored offline.
       VitePWA({
         registerType: 'autoUpdate',
         manifest: false,
