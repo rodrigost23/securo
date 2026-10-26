@@ -41,28 +41,16 @@ export default defineConfig(async ({ mode }) => {
       tailwindcss(),
       // Service worker (Workbox generateSW). The web manifest is the
       // hand-written public/manifest.json, so the plugin doesn't generate one.
-      // Only the app shell and hashed static assets are cached; /api is never
-      // cached nor answered with the shell fallback, so no financial data is
-      // stored offline.
+      // The whole build output is precached, so the app opens offline right
+      // after install. /api is never cached nor answered with the shell
+      // fallback, so no financial data is stored offline.
       VitePWA({
         registerType: 'autoUpdate',
         manifest: false,
         workbox: {
-          // Precache only the shell; hashed bundles are cached on first use so
-          // installing the app doesn't download every lazy chunk and locale.
-          globPatterns: ['index.html', 'manifest.json', '*.{png,ico}'],
+          globPatterns: ['**/*.{js,css,html,png,ico}'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//, /^\/i\//],
-          runtimeCaching: [
-            {
-              urlPattern: ({ url }) => url.pathname.startsWith('/static/'),
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'static-assets',
-                expiration: { maxEntries: 150, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              },
-            },
-          ],
           cleanupOutdatedCaches: true,
         },
       }),
