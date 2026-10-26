@@ -128,6 +128,33 @@ describe('AuthProvider session restore', () => {
     expect(auth.me).toHaveBeenCalledTimes(2)
   })
 
+  it('retries when the connection returns while the first check is still pending', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    let rejectFirst: (error: unknown) => void = () => {}
+    auth.me
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectFirst = reject }))
+      .mockResolvedValue(USER)
+
+    const result = renderHook(() => useAuth(), { wrapper })
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await act(async () => { rejectFirst(networkError()) })
+
+    await waitFor(() => expect(result.result.current.user).toEqual(USER))
+    expect(auth.me).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops listening for retries once the user is loaded', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    expect(auth.me).toHaveBeenCalledTimes(1)
+  })
+
   it('drops the previous user when another tab swaps the token and the check fails', async () => {
     localStorage.setItem('token', 'old-jwt')
     auth.me.mockResolvedValueOnce(USER).mockRejectedValue(networkError())

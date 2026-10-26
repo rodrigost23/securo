@@ -21,32 +21,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    let stopRetrying = () => {}
+    // Ask again when the connection is back or the tab becomes visible. Listening
+    // from the start covers an event that fires while the request is in flight.
+    const retry = () => {
+      if (document.visibilityState === 'hidden') return
+      setRetryCount((n) => n + 1)
+    }
+    window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', retry)
+    const stopRetrying = () => {
+      window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', retry)
+    }
     auth.me()
-      .then((me) => { if (!cancelled) setUser(me) })
+      .then((me) => {
+        if (cancelled) return
+        stopRetrying()
+        setUser(me)
+      })
       .catch((error) => {
         if (cancelled) return
         // Only a token the server rejects ends the session. No response (offline,
-        // server restarting) or a 5xx says nothing about the token, so keep it,
-        // drop any user loaded for a previous token, and ask again when the
-        // connection is back or the tab becomes visible.
+        // server restarting) or a 5xx says nothing about the token, so keep it and
+        // drop any user loaded for a previous token; the listeners retry.
         if (isAxiosError(error) && error.response?.status === 401) {
+          stopRetrying()
           localStorage.removeItem('token')
           setToken(null)
           return
         }
         setUser(null)
-        const retry = () => {
-          if (document.visibilityState === 'hidden') return
-          stopRetrying()
-          setRetryCount((n) => n + 1)
-        }
-        window.addEventListener('online', retry)
-        document.addEventListener('visibilitychange', retry)
-        stopRetrying = () => {
-          window.removeEventListener('online', retry)
-          document.removeEventListener('visibilitychange', retry)
-        }
       })
       .finally(() => { if (!cancelled) setIsLoading(false) })
     return () => {
