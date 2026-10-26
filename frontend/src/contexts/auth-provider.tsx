@@ -10,6 +10,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
   const [isLoading, setIsLoading] = useState(true)
+  const [retryCount, setRetryCount] = useState(0)
   const queryClient = useQueryClient()
 
   if (!token && (user !== null || isLoading)) {
@@ -20,20 +21,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) return
     let cancelled = false
+    let stopRetrying = () => {}
     auth.me()
       .then((me) => { if (!cancelled) setUser(me) })
       .catch((error) => {
         if (cancelled) return
         // Only a token the server rejects ends the session. No response (offline,
-        // server restarting) or a 5xx says nothing about the token, so keep it
-        // and let the requests retry once the server is back.
-        if (!isAxiosError(error) || error.response?.status !== 401) return
-        localStorage.removeItem('token')
-        setToken(null)
+        // server restarting) or a 5xx says nothing about the token, so keep it,
+        // drop any user loaded for a previous token, and ask again when the
+        // connection is back or the tab becomes visible.
+        if (isAxiosError(error) && error.response?.status === 401) {
+          localStorage.removeItem('token')
+          setToken(null)
+          return
+        }
+        setUser(null)
+        const retry = () => {
+          if (document.visibilityState === 'hidden') return
+          stopRetrying()
+          setRetryCount((n) => n + 1)
+        }
+        window.addEventListener('online', retry)
+        document.addEventListener('visibilitychange', retry)
+        stopRetrying = () => {
+          window.removeEventListener('online', retry)
+          document.removeEventListener('visibilitychange', retry)
+        }
       })
       .finally(() => { if (!cancelled) setIsLoading(false) })
-    return () => { cancelled = true }
-  }, [token])
+    return () => {
+      cancelled = true
+      stopRetrying()
+    }
+  }, [token, retryCount])
 
   // Sync token across tabs via storage events
   useEffect(() => {

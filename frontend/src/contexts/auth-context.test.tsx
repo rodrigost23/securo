@@ -114,6 +114,34 @@ describe('AuthProvider session restore', () => {
     expect(result.current.token).toBe('stored-jwt')
     expect(localStorage.getItem('token')).toBe('stored-jwt')
   })
+
+  it('loads the user once the connection is back', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValueOnce(networkError()).mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    expect(result.current.user).toBeNull()
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+    expect(auth.me).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops the previous user when another tab swaps the token and the check fails', async () => {
+    localStorage.setItem('token', 'old-jwt')
+    auth.me.mockResolvedValueOnce(USER).mockRejectedValue(networkError())
+
+    const { result } = await renderAuth()
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token', newValue: 'new-jwt' }))
+    })
+
+    await waitFor(() => expect(result.current.user).toBeNull())
+    expect(result.current.token).toBe('new-jwt')
+  })
 })
 
 describe('login', () => {
