@@ -2,11 +2,13 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+import bcrypt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate
 from app.schemas.transaction_split import (
@@ -18,6 +20,7 @@ from app.services import (
     group_service,
     settlement_service,
     split_service,
+    workspace_service,
 )
 
 
@@ -52,6 +55,23 @@ async def _make_tx(
     session.add(tx)
     await session.flush()
     return tx
+
+
+async def _make_user_with_workspace(session: AsyncSession, email: str):
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password=bcrypt.hashpw(b"x", bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    workspace = await workspace_service.create_personal_workspace_for_user(
+        session, user, commit=True
+    )
+    return user, workspace
 
 
 async def _setup(session, test_user, workspace_id, n_others=2):
@@ -140,6 +160,49 @@ async def test_credit_split_makes_recorder_owe(
     # the opposite of the debit case.
     for f in friends:
         assert by_member[f.id] == Decimal("-30.00")
+    assert self_m.id not in by_member
+
+
+@pytest.mark.asyncio
+async def test_credit_split_by_linked_member_makes_them_owe(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A credit recorded by a linked member makes that member, not the
+    default payer, owe the other members their share."""
+    group, self_m, _ = await _setup(
+        session, test_user, test_workspace.id, n_others=0
+    )
+    friend_user, _ = await _make_user_with_workspace(session, "friend@example.com")
+    friend = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Friend", linked_user_id=friend_user.id),
+    )
+    assert friend is not None
+    account = await _make_account(session, friend_user.id)
+    tx = await _make_tx(
+        session, friend_user.id, account.id, "120.00", tx_type="credit"
+    )
+
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[
+            TransactionSplitInput(group_member_id=self_m.id),
+            TransactionSplitInput(group_member_id=friend.id),
+        ],
+    )
+    await split_service.replace_splits(session, tx, payload, friend_user.id)
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert balances is not None
+    by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
+    # The friend received the 120, so they owe self a 60.00 share: positive,
+    # unlike the credit above, which was recorded by self.
+    assert by_member[friend.id] == Decimal("60.00")
     assert self_m.id not in by_member
 
 
